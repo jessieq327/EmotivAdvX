@@ -17,6 +17,8 @@ class CortexClient:
         self.ready = False
         self._poll_access = False  # 是否轮询 hasAccessRight
 
+        self.last_met = None
+
     def start(self):
         self.ws = websocket.WebSocketApp(
             "wss://localhost:6868",
@@ -91,18 +93,28 @@ class CortexClient:
                 self._subscribe_met()
 
             elif data["id"] == 4:  # subscribe
-                print("[Cortex] Subscribed to 'met'. Waiting for focus data...")
+                success = data["result"]["success"][0]
+                self.met_cols = success["cols"]          # e.g. ['eng.isActive','eng','exc.isActive','exc',...]
+                print("[Cortex] met cols:", self.met_cols)
                 self.ready = True
 
         # 流数据: met
         if "met" in data:
-            met = data["met"]
-            if isinstance(met, dict) and "foc" in met:
-                first = self.focus_value is None
-                self.focus_value = met["At"]
-                self.focus_timestamp = time.time()
-                if first:
-                    print(f"[Cortex] First focus value: {self.focus_value}")
+            values = data["met"]                     # the list you printed
+            met_dict = dict(zip(self.met_cols, values))
+            print("[MET DICT]", met_dict)            # inspect
+            # Choose whichever field you want as “focus/attention”
+            self.focus_value = met_dict.get("foc") or met_dict.get("At")
+            self.focus_timestamp = time.time()
+            met_dict = dict(zip(self.met_cols, values))
+            # Save the whole dict if you want
+            self.last_met = met_dict
+
+            # Use attention (fallback to 'foc' if future devices revert)
+            self.focus_value = met_dict.get("attention")
+            self.focus_timestamp = time.time()
+
+
 
     # ---------------- Cortex API 调用 ----------------
     def _send(self, payload):
