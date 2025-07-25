@@ -13,11 +13,16 @@ class CortexClient:
 
         self.focus_value = None
         self.focus_timestamp = None
+        self.excitement = None
+        self.excitement_timestamp = None
 
         self.ready = False
         self._poll_access = False  # 是否轮询 hasAccessRight
 
         self.last_met = None
+        self.last_mot = None
+        self.last_mot_timestamp = None
+        self.emit_callback = None
 
     def start(self):
         self.ws = websocket.WebSocketApp(
@@ -103,17 +108,42 @@ class CortexClient:
             values = data["met"]                     # the list you printed
             met_dict = dict(zip(self.met_cols, values))
             print("[MET DICT]", met_dict)            # inspect
-            # Choose whichever field you want as “focus/attention”
-            self.focus_value = met_dict.get("foc") or met_dict.get("At")
-            self.focus_timestamp = time.time()
-            met_dict = dict(zip(self.met_cols, values))
-            # Save the whole dict if you want
-            self.last_met = met_dict
-
             # Use attention (fallback to 'foc' if future devices revert)
             self.focus_value = met_dict.get("attention")
             self.focus_timestamp = time.time()
+            self.excitement = met_dict.get("exc")
+            self.excitement_timestamp = time.time()
+            
+                # ─── motion data ───
+        if "mot" in data:
+            # data["mot"] → [COUNTER_MEMS, INTERPOLATED_MEMS, Q0, Q1, Q2, Q3, ACCX, ACCY, ACCZ, MAGX, MAGY, MAGZ]
+            self.last_mot = data["mot"]
+            self.last_mot_timestamp = time.time()
+            # Emit to frontend if callback is set
+            if self.emit_callback:
+                self.emit_callback({
+                    "type": "mot",
+                    "data": self.last_mot,
+                    "fields": [
+                        "COUNTER_MEMS","INTERPOLATED_MEMS",
+                        "Q0","Q1","Q2","Q3",
+                        "ACCX","ACCY","ACCZ",
+                        "MAGX","MAGY","MAGZ"
+                    ]
+                })
 
+        # 主动推送 met 数据到前端
+        if "met" in data:
+            values = data["met"]                     # the list you printed
+            met_dict = dict(zip(self.met_cols, values))
+            print("[MET DICT]", met_dict)            # inspect
+            self.focus_value = met_dict.get("attention")
+            self.focus_timestamp = time.time()
+            self.excitement = met_dict.get("exc")
+            self.excitement_timestamp = time.time()
+            # 主动推送 met 数据到前端
+            if self.emit_callback:
+                self.emit_callback({"type": "met", "data": met_dict})
 
 
     # ---------------- Cortex API 调用 ----------------
@@ -176,10 +206,13 @@ class CortexClient:
             "params": {
                 "cortexToken": self.cortex_token,
                 "session": self.session_id,
-                "streams": ["met"]
+                "streams": ["met", "mot"]      # ← added "mot"
             },
             "id": 4
         })
+
+    def set_emit_callback(self, callback):
+        self.emit_callback = callback
 
     # ---------------- 提供给 Flask 的接口 ----------------
     def get_status(self):
@@ -188,7 +221,17 @@ class CortexClient:
             "session_id": self.session_id,
             "subscribed": self.ready,
             "focus_value": self.focus_value,
-            "focus_age_seconds": None if self.focus_timestamp is None else round(time.time() - self.focus_timestamp, 2)
+            "focus_age_seconds": None if self.focus_timestamp is None else round(time.time() - self.focus_timestamp, 2),
+            "excitement": self.excitement,
+            "excitement_age_seconds": None if self.excitement_timestamp is None else round(time.time() - self.excitement_timestamp, 2)
+        }
+    def get_motion(self):
+        age = None
+        if self.last_mot_timestamp:
+            age = round(time.time() - self.last_mot_timestamp, 2)
+        return {
+            "motion": self.last_mot,       # [gyroX,gyroY,gyroZ,accX,accY,accZ]
+            "age_seconds": age
         }
 
 cortex_client = CortexClient()

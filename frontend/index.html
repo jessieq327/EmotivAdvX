@@ -1,11 +1,645 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>BCI App</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZenFlow: 心流冥想专注游戏</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars */
+            background-color: #1a202c; /* Dark background for dark mode */
+            color: #e2e8f0; /* Light text color */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: -1; /* Place canvas behind other content if any */
+        }
+        .ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            z-index: 1;
+            pointer-events: none; /* Allow mouse events to pass through to canvas */
+        }
+        .info-box {
+            background-color: rgba(30, 41, 59, 0.8); /* Darker semi-transparent background */
+            border-radius: 0.75rem; /* rounded-xl */
+            padding: 1.5rem;
+            margin: 1rem;
+            text-align: center;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            pointer-events: auto; /* Re-enable pointer events for the box */
+            max-width: 90%;
+        }
+        .info-box h1 {
+            font-size: 2.25rem; /* text-3xl */
+            font-weight: 700; /* font-bold */
+            color: #93c5fd; /* Blue-300 */
+            margin-bottom: 0.5rem;
+        }
+        .info-box p {
+            font-size: 1.125rem; /* text-lg */
+            color: #cbd5e1; /* Gray-300 */
+        }
+        .controls-panel {
+            background-color: rgba(30, 41, 59, 0.8);
+            border-radius: 0.75rem;
+            padding: 1rem 2rem;
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            pointer-events: auto;
+            margin-bottom: 1rem;
+        }
+        .controls-panel button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            background-color: #3b82f6; /* Blue-500 */
+            color: white;
+        }
+        .controls-panel button:hover {
+            background-color: #2563eb; /* Blue-600 */
+            transform: translateY(-1px);
+        }
+        .controls-panel button:disabled {
+            background-color: #6b7280; /* Gray-500 */
+            cursor: not-allowed;
+        }
+        .stats-display {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #e2e8f0;
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+        .message-box {
+            background-color: rgba(30, 41, 59, 0.9);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            margin: 1rem;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            pointer-events: auto;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            display: none; /* Hidden by default */
+        }
+        .message-box h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #93c5fd;
+            margin-bottom: 1rem;
+        }
+        .message-box p {
+            font-size: 1.125rem;
+            color: #cbd5e1;
+            margin-bottom: 1rem;
+        }
+        .message-box button {
+            background-color: #3b82f6;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .message-box button:hover {
+            background-color: #2563eb;
+        }
+    </style>
 </head>
 <body>
-  <h1>Emotiv BCI Interface</h1>
-  <div id="output">Loading...</div>
-  <script src="app.js"></script>
+    <div class="ui-container">
+        <div class="info-box">
+            <h1>ZenFlow: 河流冥想专注游戏</h1>
+            <p>拖动鼠标可改变视角。点击“开始冥想”以开始游戏。</p>
+        </div>
+
+        <!-- Message Box for game events -->
+        <div id="gameMessageBox" class="message-box">
+            <h2 id="messageBoxTitle"></h2>
+            <p id="messageBoxContent"></p>
+            <button id="messageBoxCloseButton">确定</button>
+        </div>
+
+        <div class="controls-panel">
+            <button id="startButton">开始冥想</button>
+            <button id="stopButton" disabled>停止冥想</button>
+            <button id="pushButton" disabled>推动 (冷却中)</button>
+            <div class="stats-display">
+                <span id="targetDistanceDisplay">目标距离: 20.00米</span>
+                <span id="distanceDisplay">已前进: 0.00米</span>
+            </div>
+            <div class="stats-display">
+                <span id="focusDisplay">50%</span>
+                <span class="text-sm text-gray-400">专注度</span>
+            </div>
+            <div class="stats-display">
+                <span id="excitementDisplay">50%</span>
+                <span class="text-sm text-gray-400">兴奋度</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, plane, boat, wake;
+        let leftCanyonGroup, rightCanyonGroup; // Groups for canyon segments
+        let mouseX = 0, mouseY = 0;
+        let windowHalfX = window.innerWidth / 2;
+        let windowHalfY = window.innerHeight / 2;
+        let isDragging = false;
+        let targetRotationX = 0;
+        let targetRotationY = 0;
+        let currentRotationX = 0;
+        let currentRotationY = 0;
+        const rotationSpeed = 0.005;
+        const dampingFactor = 0.95;
+
+        // Game state variables
+        let gameActive = false;
+        const gameGoalDistance = 20; // Meters to reach the end
+        let distanceTraveled = 0;
+        let attentionScore = 50; // Simulated attention score (0-100)
+        let excitementScore = 50; // Simulated excitement score (0-100)
+        let gameInterval; // For updating game logic
+        let pushCooldown = 0; // Cooldown for push button
+        const pushCooldownDuration = 5; // 5 seconds cooldown
+
+        // UI Elements
+        const targetDistanceDisplay = document.getElementById('targetDistanceDisplay');
+        const distanceDisplay = document.getElementById('distanceDisplay');
+        const focusDisplay = document.getElementById('focusDisplay');
+        const excitementDisplay = document.getElementById('excitementDisplay');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const pushButton = document.getElementById('pushButton');
+        const gameMessageBox = document.getElementById('gameMessageBox');
+        const messageBoxTitle = document.getElementById('messageBoxTitle');
+        const messageBoxContent = document.getElementById('messageBoxContent');
+        const messageBoxCloseButton = document.getElementById('messageBoxCloseButton');
+
+        let latestGyro = [0, 0, 0];
+        let latestAccel = [0, 0, 0];
+        // Add debug display for motion data
+        let debugDiv = document.createElement('div');
+        debugDiv.style.position = 'fixed';
+        debugDiv.style.bottom = '10px';
+        debugDiv.style.right = '10px';
+        debugDiv.style.background = 'rgba(30,41,59,0.85)';
+        debugDiv.style.color = '#fff';
+        debugDiv.style.padding = '12px 18px';
+        debugDiv.style.borderRadius = '8px';
+        debugDiv.style.fontSize = '14px';
+        debugDiv.style.zIndex = 1000;
+        debugDiv.style.pointerEvents = 'auto';
+        debugDiv.innerHTML = '<b>Motion Data</b><br>gyro: [0,0,0]<br>accel: [0,0,0]';
+        document.body.appendChild(debugDiv);
+
+        let socket;
+
+        function setupSocketIO() {
+            socket = io('http://localhost:5000');
+            socket.on('connect', () => {
+                console.log('Connected to BCI backend via Socket.IO');
+            });
+            socket.on('brain_data', (payload) => {
+                console.log('收到 brain_data:', payload); // 打印全部 payload
+                if (payload.type === 'met') {
+                    console.log('attention:', payload.data.attention, 'exc:', payload.data.excitement);
+                    if (payload.data.attention !== undefined) {
+                        attentionScore = Math.max(0, Math.min(100, payload.data.attention * 100));
+                    }
+                    if (payload.data.excitement !== undefined) {
+                        excitementScore = Math.max(0, Math.min(100, payload.data.excitement * 100));
+                    }
+                }
+                if (payload.type === 'mot' && Array.isArray(payload.data)) {
+                    // 直接用固定索引解析 ACCX, ACCY
+                    const accX = parseFloat(payload.data[7]);
+                    const accY = parseFloat(payload.data[6])-0.98;
+                    // 控制台详细打印
+                    console.log('前端 ACCX:', accX, typeof accX, 'ACCY:', accY, typeof accY);
+                    // 灵敏度可调
+                    const accSensitivity = 0.01;
+                    // accX 控制上下（pitch），accY 控制左右（yaw）
+                    targetRotationX += accX * accSensitivity; // 上下
+                    targetRotationY += accY * accSensitivity; // 左右
+                    targetRotationX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotationX));
+                    targetRotationY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotationY));
+                    // debug 显示
+                    debugDiv.innerHTML = `<b>Motion Data</b><br>accX: ${accX.toFixed(3)}, accY: ${accY.toFixed(3)}`;
+                }
+            });
+            socket.on('disconnect', () => {
+                console.log('Disconnected from BCI backend');
+            });
+        }
+
+        // --- 2.5D 分层仿3D效果示例 ---
+        function addLayer(color, z, y = 0, width = 40, height = 20, opacity = 1) {
+            const mesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(width, height),
+                new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity })
+            );
+            mesh.position.set(0, y, z);
+            scene.add(mesh);
+            return mesh;
+        }
+
+        function addDemoLayers() {
+            // 远处的树（深绿色，最远），加大尺寸并上移，覆盖整个上半部分
+            addLayer(0x225522, -30, 15, 120, 60, 1); // y=15, height=60, width=120
+            // 左侧整屏绿色区域
+            const leftSide = addLayer(0x338833, -10, 0, 40, 40, 1);
+            leftSide.position.x = -30;
+            // 右侧整屏绿色区域
+            const rightSide = addLayer(0x338833, -10, 0, 40, 40, 1);
+            rightSide.position.x = 30;
+            // 中间河流（蓝色）
+            addLayer(0x3399ff, 0, 0, 16, 10, 0.95);
+        }
+
+        // --- Three.js Initialization ---
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb); // 天空蓝
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 10, 40);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // 添加分层仿3D效果
+            addDemoLayers();
+
+            // River Plane
+            const riverWidth = 20;
+            const riverSegmentLength = 100; // Length of one repeating river segment
+            const riverSegments = 2; // Number of segments to create a continuous loop
+            const totalRiverLength = riverSegmentLength * riverSegments;
+
+            const geometry = new THREE.PlaneGeometry(riverWidth, totalRiverLength, 150, 300 * riverSegments);
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0x66bb6a, // Clear green color for water
+                metalness: 0.0,
+                roughness: 0.05,
+                transmission: 0.4, // Slightly less transparent to make water more visible
+                ior: 1.33,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.05,
+                transparent: true,
+                opacity: 0.95,
+                side: THREE.DoubleSide
+            });
+
+            plane = new THREE.Mesh(geometry, material);
+            plane.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+            plane.position.z = -totalRiverLength / 2; // Start plane at the visible beginning
+            scene.add(plane);
+
+            // Add a directional light for highlights
+            const light = new THREE.DirectionalLight(0xffffff, 2.5); // Increased intensity
+            light.position.set(10, 20, 15);
+            scene.add(light);
+
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.7);
+            scene.add(ambientLight);
+
+            // Add the white triangle boat
+            const boatGeometry = new THREE.ConeGeometry(0.5, 1.5, 3); // Radius, Height, Radial Segments
+            const boatMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff }); // White color
+            boat = new THREE.Mesh(boatGeometry, boatMaterial);
+            boat.rotation.x = Math.PI / 2; // Point it forward along the Z-axis
+            boat.position.set(0, 0.75, 0); // Position it slightly above the water plane
+            scene.add(boat);
+            boat.visible = false; // Hide boat initially
+
+            // Boat Wake (simple plane behind the boat)
+            const wakeGeometry = new THREE.PlaneGeometry(1.5, 3, 2, 2); // Width, Length
+            const wakeMaterial = new THREE.MeshBasicMaterial({
+                color: 0xADD8E6, // Light blue
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide
+            });
+            wake = new THREE.Mesh(wakeGeometry, wakeMaterial);
+            wake.rotation.x = -Math.PI / 2; // Horizontal
+            wake.position.set(0, 0.05, -1.5); // Behind the boat, slightly above water
+            boat.add(wake); // Add wake as a child of the boat
+            wake.visible = false; // Hide wake initially
+
+            // Canyons
+            const canyonHeight = 30;
+            const canyonDepth = 5;
+            const canyonSegmentLength = 50; // Length of one canyon segment
+            const numCanyonSegments = 4; // Number of segments to create a continuous loop
+
+            const canyonMaterial = new THREE.MeshPhongMaterial({ color: 0x5a4a3a }); // Earthy brown/grey
+
+            leftCanyonGroup = new THREE.Group();
+            rightCanyonGroup = new THREE.Group();
+            scene.add(leftCanyonGroup);
+            scene.add(rightCanyonGroup);
+
+            for (let i = 0; i < numCanyonSegments; i++) {
+                // Left Canyon Segment
+                const leftCanyonGeometry = new THREE.BoxGeometry(canyonDepth, canyonHeight, canyonSegmentLength);
+                const leftCanyon = new THREE.Mesh(leftCanyonGeometry, canyonMaterial);
+                leftCanyon.position.set(-(riverWidth / 2 + canyonDepth / 2), canyonHeight / 2, i * canyonSegmentLength - totalRiverLength / 2);
+                leftCanyonGroup.add(leftCanyon);
+
+                // Right Canyon Segment
+                const rightCanyonGeometry = new THREE.BoxGeometry(canyonDepth, canyonHeight, canyonSegmentLength);
+                const rightCanyon = new THREE.Mesh(rightCanyonGeometry, canyonMaterial);
+                rightCanyon.position.set((riverWidth / 2 + canyonDepth / 2), canyonHeight / 2, i * canyonSegmentLength - totalRiverLength / 2);
+                rightCanyonGroup.add(rightCanyon);
+            }
+
+            // Event Listeners for mouse interaction
+            document.addEventListener('mousedown', onDocumentMouseDown, false);
+            document.addEventListener('mousemove', onDocumentMouseMove, false);
+            document.addEventListener('mouseup', onDocumentMouseUp, false);
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // --- Mouse Interaction ---
+        function onWindowResize() {
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onDocumentMouseDown(event) {
+            event.preventDefault();
+            isDragging = true;
+            mouseX = event.clientX - windowHalfX;
+            mouseY = event.clientY - windowHalfY;
+        }
+
+        function onDocumentMouseMove(event) {
+            if (isDragging) {
+                const deltaX = event.clientX - windowHalfX - mouseX;
+                const deltaY = event.clientY - windowHalfY - mouseY;
+
+                targetRotationY += deltaX * rotationSpeed;
+                targetRotationX += deltaY * rotationSpeed;
+                targetRotationX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotationX));
+
+                mouseX = event.clientX - windowHalfX;
+                mouseY = event.clientY - windowHalfY;
+            }
+        }
+
+        function onDocumentMouseUp(event) {
+            event.preventDefault();
+            isDragging = false;
+        }
+
+        // --- Game Logic ---
+
+        function showMessageBox(title, content, onClose = null) {
+            messageBoxTitle.textContent = title;
+            messageBoxContent.textContent = content;
+            gameMessageBox.style.display = 'block';
+            messageBoxCloseButton.onclick = () => {
+                gameMessageBox.style.display = 'none';
+                if (onClose) onClose();
+            };
+        }
+
+        function updateGameLogic() {
+            if (!gameActive) return;
+
+            // 只用 BCI 数据，不再模拟 attentionScore 和 excitementScore
+            focusDisplay.textContent = `${Math.round(attentionScore)}%`;
+            excitementDisplay.textContent = `${Math.round(excitementScore)}%`;
+
+            // Update boat speed based on attention
+            const baseSpeed = 0.05; // Base speed even with low attention
+            const attentionBonus = (attentionScore / 100) * 0.15; // Max additional speed
+            const boatSpeed = baseSpeed + attentionBonus; // Local variable for current frame's speed
+
+            // Update distance traveled
+            distanceTraveled += boatSpeed; // Distance is cumulative
+            distanceDisplay.textContent = `已前进: ${distanceTraveled.toFixed(2)}米`;
+
+            // Update push button cooldown
+            if (pushCooldown > 0) {
+                pushCooldown--;
+                pushButton.textContent = `推动 (${pushCooldown}s)`;
+                pushButton.disabled = true;
+            } else {
+                pushButton.textContent = '推动';
+                pushButton.disabled = false;
+            }
+
+            // Check win condition
+            if (distanceTraveled >= gameGoalDistance) {
+                endGame(true); // Win condition met
+            }
+        }
+
+        function triggerPush() {
+            if (!gameActive || pushCooldown > 0) return;
+
+            // 不再直接修改 attentionScore/excitementScore，只做冷却
+            pushCooldown = pushCooldownDuration; // Start cooldown
+            pushButton.textContent = `推动 (${pushCooldown}s)`;
+            pushButton.disabled = true;
+        }
+
+        function startGame() {
+            if (gameActive) return;
+
+            gameActive = true;
+            distanceTraveled = 0;
+            // 不再重置 attentionScore/excitementScore，由 BCI 控制
+            pushCooldown = 0; // Reset cooldown
+            
+            boat.position.set(0, 0.75, 0); // Keep boat visually fixed at center
+            boat.visible = true; // Show boat
+            wake.visible = true; // Show wake
+
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            pushButton.disabled = false;
+            pushButton.textContent = '推动';
+
+            distanceDisplay.textContent = `已前进: 0.00米`;
+            targetDistanceDisplay.textContent = `目标距离: ${gameGoalDistance.toFixed(2)}米`;
+
+            // Update game logic every second
+            gameInterval = setInterval(updateGameLogic, 1000);
+        }
+
+        function endGame(won = false) {
+            clearInterval(gameInterval);
+            gameActive = false;
+            boat.visible = false; // Hide boat
+            wake.visible = false; // Hide wake
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            pushButton.disabled = true;
+
+            let title, content;
+            if (won) {
+                title = "恭喜！冥想大师！";
+                content = `你成功前进了 ${distanceTraveled.toFixed(2)} 米，抵达了终点！\n\n你已掌握了平静与专注的艺术。`;
+            } else {
+                title = "冥想结束";
+                content = `你总共前进了 ${distanceTraveled.toFixed(2)} 米。\n\n继续练习，探索更深的平静。`;
+            }
+            showMessageBox(title, content);
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            currentRotationY += (targetRotationY - currentRotationY) * 0.1;
+            currentRotationX += (targetRotationX - currentRotationX) * 0.1;
+
+            if (!isDragging) {
+                targetRotationY *= dampingFactor;
+                targetRotationX *= dampingFactor;
+            }
+
+            const cameraDistance = 45;
+            camera.position.x = cameraDistance * Math.sin(currentRotationY) * Math.cos(currentRotationX);
+            camera.position.y = 15 + cameraDistance * Math.sin(currentRotationX);
+            camera.position.z = cameraDistance * Math.cos(currentRotationY) * Math.cos(currentRotationX);
+
+            camera.lookAt(0, 0, 0);
+
+            const time = Date.now() * 0.001;
+            const positions = plane.geometry.attributes.position.array;
+            const originalPositions = plane.geometry.attributes.position.original;
+
+            if (!originalPositions) {
+                plane.geometry.attributes.position.original = new Float32Array(positions);
+            }
+
+            // Calculate wave amplitude based on attention and excitement
+            // Higher attention -> lower base amplitude (calmer water)
+            // Higher excitement -> higher additional amplitude (more agitated water)
+            const maxWaveAmplitude = 1.0; // Overall maximum wave height
+            const minWaveAmplitude = 0.1; // Overall minimum wave height
+            
+            // Normalize attention and excitement to 0-1 range
+            const normalizedAttention = attentionScore / 100;
+            const normalizedExcitement = excitementScore / 100;
+
+            // Invert attention for calmness: higher attention means lower calmness factor
+            const calmnessFactor = 1 - normalizedAttention; // 0 when attention is 100, 1 when attention is 0
+
+            // Combine calmness and excitement to determine wave intensity
+            // Calmness reduces waves, excitement increases them
+            let waveIntensity = calmnessFactor * 0.7 + normalizedExcitement * 0.3; // Adjust weights as needed
+            waveIntensity = Math.max(0, Math.min(1, waveIntensity)); // Clamp between 0 and 1
+
+            const combinedAmplitude = minWaveAmplitude + (maxWaveAmplitude - minWaveAmplitude) * waveIntensity;
+
+
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = plane.geometry.attributes.position.original[i];
+                const y = plane.geometry.attributes.position.original[i + 1];
+
+                positions[i + 2] = Math.sin(y * 0.8 + time * 2) * (combinedAmplitude * 0.5) +
+                                    Math.cos(x * 1.5 + time * 3) * (combinedAmplitude * 0.3) +
+                                    Math.sin((x + y) * 0.5 + time * 2.5) * (combinedAmplitude * 0.2);
+            }
+
+            plane.geometry.attributes.position.needsUpdate = true;
+
+            // Make the river and canyons scroll past the boat
+            const riverLoopLength = 200; // The length of the plane (increased for smoother loop)
+            plane.position.z = -(distanceTraveled % riverLoopLength);
+            // If the plane moves too far back, reset its Z position to create a continuous loop
+            if (plane.position.z < -riverLoopLength / 2) {
+                plane.position.z += riverLoopLength;
+            }
+
+            // Move canyon segments
+            const canyonSegmentLength = 50;
+            leftCanyonGroup.children.forEach(canyon => {
+                canyon.position.z = (canyon.originalZ || canyon.position.z) - (distanceTraveled % riverLoopLength);
+                if (canyon.position.z < -riverLoopLength / 2 - canyonSegmentLength / 2) {
+                    canyon.position.z += riverLoopLength;
+                }
+            });
+            rightCanyonGroup.children.forEach(canyon => {
+                canyon.position.z = (canyon.originalZ || canyon.position.z) - (distanceTraveled % riverLoopLength);
+                if (canyon.position.z < -riverLoopLength / 2 - canyonSegmentLength / 2) {
+                    canyon.position.z += riverLoopLength;
+                }
+            });
+
+            // --- Real-time BCI Data Integration ---
+            // The setupSocketIO function is now defined globally.
+            // The latestGyro, attentionScore, excitementScore are updated by the Socket.IO handler.
+
+            // 移除 animate() 里对 latestGyro 的旋转累加，只保留加速度控制视角
+            // 视角旋转只由 setupSocketIO 里的加速度数据控制
+
+            renderer.render(scene, camera);
+        }
+
+        // Start the application
+        window.onload = function () {
+            initThreeJS();
+            animate();
+            setupSocketIO(); // Connect to backend for real-time data
+            // Initial message on load
+            showMessageBox(
+                "欢迎来到 ZenFlow！",
+                "拖动鼠标改变视角。点击“开始冥想”以开始你的平静之旅。你的专注度越高，船只前进越快，水面越平静。",
+                () => {
+                    // This callback runs when the user clicks "确定" on the initial message
+                }
+            );
+            startButton.addEventListener('click', startGame);
+            stopButton.addEventListener('click', () => endGame(false)); // Stop button ends game without winning
+            pushButton.addEventListener('click', triggerPush);
+        };
+    </script>
 </body>
 </html>
