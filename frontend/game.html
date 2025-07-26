@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZenFlow: 心流冥想专注游戏</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+    <style>
+        body {
+            
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0; /* canvas在最底层 */
+        }
+        .ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end; /* Pushes content to the bottom */
+            align-items: center;
+            padding: 1rem;
+            z-index: 100; /* UI容器在canvas之上 */
+            pointer-events: auto; /* Allow mouse events to pass through to canvas */
+        }
+        .controls-panel {
+            position: fixed;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            z-index: 200;
+        }
+        .controls-panel button {
+            padding: 16px 32px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #fff;
+            color: #22223b;
+            border: 2px solid #e5e7eb;
+            min-width: 120px;
+        }
+        .controls-panel button:hover {
+            background: #f8fafc;
+            border-color: #d1d5db;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .controls-panel button:disabled {
+            background: #f3f4f6;
+            color: #9ca3af;
+            border-color: #e5e7eb;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .welcome-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255,255,255,0.5);
+            color: #fff;
+            border-radius: 40px;
+            padding: 48px 64px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            z-index: 300;
+            min-width: 320px;
+            max-width: 480px;
+        }
+        .welcome-panel h2 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: #fff;
+        }
+        .welcome-panel p {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #fff;
+            margin-bottom: 0;
+        }
+        .welcome-panel button {
+            margin-top: 24px;
+            padding: 16px 32px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #fff;
+            color: #22223b;
+            border: 2px solid #e5e7eb;
+            min-width: 120px;
+        }
+        .welcome-panel button:hover {
+            background: #f8fafc;
+            border-color: #d1d5db;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .stats-display {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #22223b;
+            font-size: 1rem;
+            font-weight: 600;
+            pointer-events: auto;
+            margin: 8px 0;
+        }
+
+        #bci-input {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 8px;
+            background: #4a5568;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+            border-radius: 4px;
+        }
+        #bci-input:hover {
+            opacity: 1;
+        }
+        #bci-input::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #63b3ed; /* Blue thumb */
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        #bci-input::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #63b3ed;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        #value-display {
+            font-size: 0.9rem;
+            color: #a0aec0;
+        }
+        
+        /* 改善输入框的交互体验 */
+        #customTargetDistance:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        
+        #customTargetDistance:hover {
+            border-color: #60a5fa;
+        }
+
+        /* 确保输入框可以点击 */
+        #customTargetDistance {
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+        }
+        
+        /* 进度条样式 */
+        .info-panel {
+            position: fixed;
+            top: 32px;
+            right: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 200;
+        }
+        .info-box {
+            background: rgba(255,255,255,0.5);
+            color: #fff;
+            border-radius: 40px;
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            min-width: 80px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        .progress-bar-outer {
+            width: 100%;
+            height: 16px;
+            background: #e5e7eb;
+            border-radius: 8px;
+            margin: 0 auto 8px auto;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-bar-inner {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
+            border-radius: 8px;
+            transition: width 0.3s cubic-bezier(.4,2,.6,1);
+        }
+        .progress-bar-text {
+            font-size: 0.95rem;
+            color: #ffffff;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+        .end-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 400;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .end-bubble {
+            background: rgba(255,255,255,0.5);
+            color: #fff;
+            border-radius: 20px 20px 40px 40px;
+            padding: 12px 36px 8px 36px;
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: -8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        .end-content {
+            background: rgba(255,255,255,0.5);
+            border-radius: 40px;
+            padding: 48px 64px 32px 64px;
+            min-width: 340px;
+            max-width: 480px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #fff;
+        }
+        .end-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #fff;
+        }
+        .end-desc {
+            font-size: 1.1rem;
+            color: #fff;
+            margin-bottom: 18px;
+        }
+        .end-tip {
+            font-size: 1rem;
+            color: #fff;
+            margin-top: 8px;
+        }
+        .end-btns {
+            display: flex;
+            gap: 32px;
+            margin-top: 32px;
+            justify-content: center;
+        }
+        .end-btns button {
+            padding: 16px 40px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #fff;
+            color: #22223b;
+            border: 2px solid #e5e7eb;
+            min-width: 120px;
+        }
+        .end-btns button:hover {
+            background: #f8fafc;
+            border-color: #d1d5db;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+    </style>
+</head>
+<body>
+    <div id="page-mask"></div>
+    <div class="ui-container">
+        <!-- 右上角信息面板 -->
+        <div class="info-panel">
+            <div class="info-box">
+                Target distance: <span id="targetDistanceDisplay"></span>
+            </div>
+            <div class="info-box">
+                Distance: <span id="distanceDisplay">0.00 m</span>
+            </div>
+            <div class="progress-bar-outer">
+                <div class="progress-bar-inner" id="progressBar"></div>
+            </div>
+        </div>
+        
+        <!-- 中央欢迎界面 -->
+        <div class="welcome-panel" id="welcomePanel">
+            <h2>Welcome To EmotiBoat</h2>
+            <p>Click 'START' to start the game. In the game, the higher the concentration, the faster the ship moves forward.</p>
+            <button id="welcomeConfirmBtn">OK</button>
+        </div>
+        
+        <div class="end-panel" id="endPanel" style="display:none;">
+            <div class="end-bubble">Congratulations!</div>
+            <div class="end-content">
+                <div class="end-title">You've reached the finish line!</div>
+                <div class="end-desc" id="endDistance">You have successfully advanced XXX meters!</div>
+                <div class="end-tip">Focus on, Flow in</div>
+            </div>
+            <div class="end-btns" id="endBtns"></div>
+        </div>
+        
+        <div class="controls-panel">
+            <button id="startButton">START</button>
+            <button id="stopButton" disabled>STOP</button>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, plane, boat;
+        let bciInput, valueDisplay;
+        let starfield; // For stars in the sky
+        let meteors = []; // 存储活跃的流星
+        let mouseX = 0, mouseY = 0;
+        let windowHalfX = window.innerWidth / 2;
+        let windowHalfY = window.innerHeight / 2;
+        let isDragging = false;
+        let targetRotationX = 0;
+        let targetRotationY = 0;
+        let currentRotationX = 0;
+        let currentRotationY = 0;
+        const rotationSpeed = 0.005;
+        const dampingFactor = 0.95;
+
+        // Game state variables
+        let gameActive = false;
+        let gameGoalDistance = 20; // 改为变量，允许自定义
+        let distanceTraveled = 0;
+        let attentionScore = 50; // Simulated attention score (0-100)
+        let excitementScore = 50; // Simulated excitement score (0-100)
+        let gameInterval; // For updating game logic
+        let startTime = performance.now();
+        let t;
+        let boatSpotlight; // Declare boatSpotlight at a higher scope
+
+        let boatSpeed = 0; // Declare boatSpeed at a higher scope
+
+        // For boat path
+        let boatPathGeometry;
+        let boatPathLine;
+        const pathPoints = [];
+        const maxPathPoints = 500; // Max points to store for the path
+
+        // UI Elements
+        const targetDistanceDisplay = document.getElementById('targetDistanceDisplay');
+        const distanceDisplay = document.getElementById('distanceDisplay');
+        const focusDisplay = document.getElementById('focusDisplay');
+        const excitementDisplay = document.getElementById('excitementDisplay');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const gameMessageBox = document.getElementById('gameMessageBox');
+        const messageBoxTitle = document.getElementById('messageBoxTitle');
+        const messageBoxContent = document.getElementById('messageBoxContent');
+        const messageBoxCloseButton = document.getElementById('messageBoxCloseButton');
+
+        let latestGyro = [0, 0, 0];
+        let latestAccel = [0, 0, 0];
+        let socket;
+        let ambientLight;
+
+        // 分段渐变色列表（Serene Ocean）
+        const colorList = [
+            "#120A1A",
+            "#1F1A3D",
+            "#3A2A6D",
+            "#776E99",
+            "#B5728E",
+            "#DA7F7D"
+        ].map(c => new THREE.Color(c));
+
+        let greenLight, lightSphere; // 提升到全局作用域
+
+
+        function setupSocketIO() {
+            socket = io('http://localhost:5000');
+            socket.on('connect', () => {
+                console.log('Connected to BCI backend via Socket.IO');
+                setBCIStatus('good'); // 默认连接上先设为“稳定”
+            });
+            socket.on('brain_data', (payload) => {
+                console.log('收到 brain_data:', payload);
+                // 信号强度判断
+                if (payload.type === 'sig' && payload.data !== undefined) {
+                    if (payload.data < 0.3) setBCIStatus('weak');
+                    else setBCIStatus('good');
+                }
+                if (payload.type === 'met') {
+                    console.log('attention:', payload.data.attention, 'exc:', payload.data.excitement);
+                    if (payload.data.attention !== undefined) {
+                        attentionScore = Math.max(0, Math.min(100, payload.data.attention * 100));
+                    }
+                    if (payload.data.excitement !== undefined) {
+                        excitementScore = Math.max(0, Math.min(100, payload.data.excitement * 100));
+                    }
+                }
+                if (payload.type === 'mot' && Array.isArray(payload.data)) {
+                    // 直接用固定索引解析 ACCX, ACCY
+                    const accX = parseFloat(payload.data[7]);
+                    const accY = parseFloat(payload.data[6])-0.98;
+                    console.log('前端 ACCX:', accX, typeof accX, 'ACCY:', accY, typeof accY);
+                    
+                    // 添加阈值过滤，忽略小幅度的晃动
+                    const threshold = 0.3; // 阈值，可以根据需要调整
+                    const accSensitivity = 0.01;
+                    
+                    // 只有当加速度变化超过阈值时才更新视角
+                    if (Math.abs(accX) > threshold) {
+                        targetRotationX += accX * accSensitivity; // 上下
+                        targetRotationX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotationX));
+                    }
+                    
+                    if (Math.abs(accY) > threshold) {
+                        targetRotationY += accY * accSensitivity; // 左右
+                        targetRotationY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotationY));
+                    }
+                    
+                }
+            });
+            socket.on('disconnect', () => {
+                console.log('Disconnected from BCI backend');
+                setBCIStatus('disconnected');
+            });
+        }
+
+        // --- Three.js Initialization ---
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a1a); // Very dark blue for night sky
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 10); // Lower and closer camera position
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // River Plane
+            const riverWidth = 20;
+            const riverSegmentLength = 100; // Length of one repeating river segment
+            const riverSegments = 2; // Number of segments to create a continuous loop
+            const totalRiverLength = riverSegmentLength * riverSegments;
+
+            const geometry = new THREE.PlaneGeometry(riverWidth, totalRiverLength, 150, 300 * riverSegments);
+            const material = new THREE.MeshPhysicalMaterial({
+                color: 0x085B5B, // Darker blue for night water
+                metalness: 0.1, // Increased metalness for more reflection
+                roughness: 0.05, // Lower roughness for clearer reflections
+                transmission: 0.4,
+                ior: 1.33,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.05,
+                transparent: 0.8,
+                opacity: 0.5, // Slightly less opaque
+                side: THREE.DoubleSide
+            });
+
+            plane = new THREE.Mesh(geometry, material);
+            plane.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+            plane.position.z = -totalRiverLength / 2; // Start plane at the visible beginning
+            scene.add(plane);
+
+            // Add a directional light for highlights
+            const light = new THREE.DirectionalLight(0xffffff, 2.5); // Increased intensity
+            light.position.set(10, 20, 15);
+            scene.add(light);
+
+            // Add ambient light
+            ambientLight = new THREE.AmbientLight(0xE427F5, 0.9);
+            scene.add(ambientLight);
+
+            // Add glowing green light
+            greenLight = new THREE.PointLight(0x00ff00, 5, 50); // Color, intensity, distance
+            greenLight.position.set(0, 0.25, -5 - gameGoalDistance); // 终点位置
+            scene.add(greenLight);
+
+            // Add a sphere to visually represent the green light source
+            const lightSphereGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+            const lightSphereMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            lightSphere = new THREE.Mesh(lightSphereGeometry, lightSphereMaterial);
+            lightSphere.position.copy(greenLight.position); // Position the sphere at the light's position
+            scene.add(lightSphere);
+
+            // Add spotlight for the boat
+            boatSpotlight = new THREE.SpotLight(0xffffff, 10, 50, Math.PI / 6, 0.5, 1); // Color, intensity, distance, angle, penumbra, decay
+            boatSpotlight.position.set(0, 2, -5); // Initial position, will be updated with boat
+            boatSpotlight.target = new THREE.Object3D(); // Create a target object for the spotlight
+            boatSpotlight.target.position.set(0, 0, -5); // Initial target position (below the boat)
+            scene.add(boatSpotlight);
+            scene.add(boatSpotlight.target);
+
+            // Load the 3D boat model
+            const loader = new THREE.GLTFLoader();
+            loader.load(
+                'boat_model.glb', //  <--- IMPORTANT: Update this path to your GLB file
+                function (gltf) {
+                    // Remove placeholder if it was added
+                    if (boat && boat.isPlaceholder) {
+                        scene.remove(boat);
+                    }
+                    boat = gltf.scene; // Assign the loaded scene to the 'boat' variable
+                    boat.scale.set(0.3, 0.3, 0.3); // Adjust scale as needed for your model
+                    boat.position.set(0, 0.5, 5); // 初始位置
+                    boat.rotation.set(0, 0, 0); // 先重置所有旋转
+                    // 下面可以按需叠加旋转，顺序更直观：
+                    boat.rotateY(Math.PI*12/10); // 绕Y轴旋转180度（左右方向）
+                    // boat.rotateZ(Math.PI/2); // 绕Z轴旋转90度（顺时针）
+                    // 用户可在此处自定义旋转顺序和角度
+                    scene.add(boat);
+                    boat.visible = true; // Hide initially, show on game start
+                    console.log('Boat model loaded successfully!', boat);
+                },
+                // called while loading is progressing
+                function (xhr) {
+                    console.log((xhr.loaded / xhr.total * 100) + '% loaded of boat model');
+                },
+                // called when loading has errors
+                function (error) {
+                    console.error('An error happened loading the boat model:', error);
+                    // Fallback: Create a simple placeholder if the model fails to load
+                    const geometry = new THREE.BoxGeometry(1, 0.5, 2);
+                    const material = new THREE.MeshBasicMaterial({ color: 0x884400 }); // Brown color for a simple boat
+                    boat = new THREE.Mesh(geometry, material);
+                    boat.position.set(0, 0.25, -5);
+                    boat.isPlaceholder = true; // Mark as placeholder
+                    scene.add(boat);
+                    boat.visible = true; // Make placeholder visible
+                    showMessageBox(
+                        "模型加载失败",
+                        "船只模型未能加载。请确保 'models/boat_model.glb' 路径正确且文件存在。已使用一个简单的方块作为替代。",
+                        () => {}
+                    );
+                }
+            );
+
+            // Starfield with Blinking Effect (FIXED)
+            const starsCount = 3000;
+            const positions = new Float32Array(starsCount * 3);
+            const opacityOffsets = new Float32Array(starsCount);
+
+            // 生成星星位置与闪烁偏移
+            for (let i = 0; i < starsCount; i++) {
+                positions[i * 3]     = THREE.MathUtils.randFloatSpread(2000);  // x: -1000 to +1000
+                positions[i * 3 + 1] = THREE.MathUtils.randFloatSpread(1000);  // y: -500 to +500
+                positions[i * 3 + 2] = THREE.MathUtils.randFloatSpread(2000);  // z: -1000 to +1000
+
+
+                opacityOffsets[i] = Math.random(); // 闪烁偏移
+            }
+
+            const starsGeometry = new THREE.BufferGeometry();
+            starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            starsGeometry.setAttribute('aOpacityOffset', new THREE.BufferAttribute(opacityOffsets, 1));
+
+            const starsMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0.0 },
+                    starColor: { value: new THREE.Color(0xffffff) },
+                    blinkSpeed: { value: 2.0 }
+                },
+                vertexShader: `
+                    attribute float aOpacityOffset;
+                    uniform float time;
+                    uniform float blinkSpeed;
+                    varying float vOpacityOffset;
+
+                    void main() {
+                        vOpacityOffset = aOpacityOffset;
+                        gl_PointSize = 5.0;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform float time;
+                    uniform float blinkSpeed;
+                    uniform vec3 starColor;
+                    varying float vOpacityOffset;
+
+                    void main() {
+                        float blinkFactor = abs(sin(time * blinkSpeed + vOpacityOffset * 5.0));
+                        gl_FragColor = vec4(starColor, blinkFactor);
+                    }
+                `,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: true,
+                depthTest: true
+            });
+
+            starfield = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starfield);
+
+            // 球体轨迹流星效果函数
+            function spawnMeteor() {
+                console.log('生成流星！');
+                
+                // 主球（头部）
+                const mainSphereGeometry = new THREE.SphereGeometry(1.2, 16, 16);
+                const mainSphereMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x99d2cf, // 修改为基于 #99d2cf 的颜色
+                    transparent: true, 
+                    opacity: 1.0,
+                    blending: THREE.AdditiveBlending
+                });
+                const mainSphere = new THREE.Mesh(mainSphereGeometry, mainSphereMaterial);
+                
+                // 设置初始位置 - 生成在摄像头正面
+                mainSphere.position.set(
+                    (Math.random() - 0.5) * 400, // 减小X范围，更集中在正面
+                    Math.random() * 100 + 50,     // 降低高度范围，更接近地平线
+                    (Math.random() - 0.5) * 200 - 300 // 在摄像头前方，Z为负值
+                );
+                
+                scene.add(mainSphere);
+                
+                // 轨迹球数组
+                const trailBalls = [];
+                const trailPositions = []; // 记录轨迹位置
+                const trailCount = 40; // 轨迹球的数量
+                
+                // 修改运动方向：与地平线45度角以内
+                const isLeftToRight = Math.random() > 0.5; // 随机选择方向
+                const horizontalSpeed = 1 + Math.random() * 0.5; // 水平速度
+                const verticalSpeed = 0.5 + Math.random() * 0.5; // 垂直速度（限制在45度内）
+                const direction = new THREE.Vector3(
+                    isLeftToRight ? -horizontalSpeed : horizontalSpeed, // 左到右或右到左
+                    -verticalSpeed, // 向下，但速度较小，保持45度角以内
+                    -0.3 - Math.random() * 0.2 // 向里，速度也减小
+                ).normalize();
+
+                let age = 0;
+                const maxAge = 500; // 持续时间
+
+                function updateMeteor() {
+                    if (age++ > maxAge) {
+                        scene.remove(mainSphere);
+                        if (mainSphere.geometry) mainSphere.geometry.dispose();
+                        if (mainSphere.material) mainSphere.material.dispose();
+                        trailBalls.forEach(ball => {
+                            scene.remove(ball);
+                            if (ball.geometry) ball.geometry.dispose();
+                            if (ball.material) ball.material.dispose();
+                        });
+                        return;
+                    }
+                    
+                    // 移动主球
+                    mainSphere.position.add(direction.clone().multiplyScalar(1.5));
+                    
+                    // 记录轨迹位置
+                    trailPositions.push(mainSphere.position.clone());
+                    if (trailPositions.length > trailCount) {
+                        trailPositions.shift(); // 移除最老的位置
+                    }
+                    
+                    // 更新轨迹球
+                    trailBalls.forEach((ball, index) => {
+                        scene.remove(ball);
+                        if (ball.geometry) ball.geometry.dispose();
+                        if (ball.material) ball.material.dispose();
+                    });
+                    trailBalls.length = 0; // 清空数组
+                    
+                    // 重新创建轨迹球 - 从大到小排列
+                    for (let i = 0; i < trailPositions.length; i++) {
+                        const size = 2 * (1 - i / trailCount); // 逐渐变小
+                        const trailGeometry = new THREE.SphereGeometry(size, 12, 12);
+                        const trailMaterial = new THREE.MeshBasicMaterial({ 
+                            color: 0x99d2cf, // 修改为基于 #99d2cf 的颜色
+                            transparent: true, 
+                            opacity: 0.8 * (1 - i / trailCount), // 逐渐变透明
+                            blending: THREE.AdditiveBlending
+                        });
+                        const trailBall = new THREE.Mesh(trailGeometry, trailMaterial);
+                        
+                        // 使用最新的位置给最大的球，最老的位置给最小的球
+                        const positionIndex = trailPositions.length - 1 - i;
+                        trailBall.position.copy(trailPositions[positionIndex]);
+                        scene.add(trailBall);
+                        trailBalls.push(trailBall);
+                    }
+                    
+                    // 更新透明度
+                    mainSphere.material.opacity *= 0.995; // 更慢的渐隐
+                    trailBalls.forEach(ball => {
+                        ball.material.opacity *= 0.995; // 更慢的渐隐
+                    });
+                    
+                    requestAnimationFrame(updateMeteor);
+                }
+
+                updateMeteor();
+            }
+
+            // 随机间隔生成流星 - 2-4秒之间
+            function scheduleNextMeteor() {
+                const delay = Math.random() * 2000 + 2000; // 2-4秒
+                setTimeout(() => {
+                    spawnMeteor();
+                    scheduleNextMeteor();
+                }, delay);
+            }
+            
+            // 页面加载后立即开始生成流星
+            setTimeout(() => {
+                spawnMeteor();
+                scheduleNextMeteor();
+            }, 1000);
+
+            // Event Listeners for mouse interaction
+            document.addEventListener('mousedown', onDocumentMouseDown, false);
+            document.addEventListener('mousemove', onDocumentMouseMove, false);
+            document.addEventListener('mouseup', onDocumentMouseUp, false);
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // --- Mouse Interaction ---
+        function onWindowResize() {
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onDocumentMouseDown(event) {
+            if (event.target.closest('.stats-display')) return; // 不处理输入区域
+                event.preventDefault(); // 只阻止 canvas 拖动等行为
+                isDragging = true;
+                mouseX = event.clientX - windowHalfX;
+                mouseY = event.clientY - windowHalfY;
+        }
+
+        function onDocumentMouseMove(event) {
+            if (isDragging) {
+                const deltaX = event.clientX - windowHalfX - mouseX;
+                const deltaY = event.clientY - windowHalfY - mouseY;
+
+                targetRotationY += deltaX * rotationSpeed;
+                targetRotationX += deltaY * rotationSpeed;
+                targetRotationX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotationX));
+
+                mouseX = event.clientX - windowHalfX;
+                mouseY = event.clientY - windowHalfY;
+            }
+        }
+
+        function onDocumentMouseUp(event) {
+            event.preventDefault();
+            isDragging = false;
+        }
+
+        // --- Game Logic ---
+        let startTimestamp = null;
+        let elapsedTime = 0;
+
+        // 更新进度条函数
+        function updateProgressBar() {
+            const progress = Math.min(distanceTraveled / gameGoalDistance, 1);
+            const progressBar = document.getElementById('progressBar');
+            if (progressBar) {
+                progressBar.style.width = `${progress * 100}%`;
+            }
+        }
+
+        function updateGameLogic() {
+            if (!gameActive) return;
+            
+            console.log('游戏逻辑正在执行，distanceTraveled:', distanceTraveled, 'boatSpeed:', boatSpeed);
+
+            const baseSpeed = 0.005; // 增加基础速度
+            const attentionBonus = (attentionScore / 100) * 0.05;
+            boatSpeed = baseSpeed + attentionBonus;
+
+            // Calculate the target Z position
+            const targetZ = -5 - distanceTraveled;
+            const lerpFactor = 0.05;
+            boat.position.z = boat.position.z + (targetZ - boat.position.z) * lerpFactor;
+
+            t = (performance.now() - startTime)/100;
+            boat.position.x = Math.sin(0.05*t);
+            boat.position.y = 0.25;
+
+            // 更新 spotlight 位置
+            if (boatSpotlight && boat) {
+                boatSpotlight.position.copy(boat.position);
+                boatSpotlight.position.y += 1.5;
+                boatSpotlight.target.position.set(boat.position.x, boat.position.y - 5, boat.position.z);
+                boatSpotlight.target.updateMatrixWorld();
+            }
+
+            distanceTraveled += boatSpeed;
+            distanceDisplay.textContent = `${distanceTraveled.toFixed(2)} m`;
+            updateProgressBar(); // 更新进度条
+
+            console.log('距离:', distanceTraveled.toFixed(2), '目标:', gameGoalDistance, '速度:', boatSpeed.toFixed(4));
+
+            if (distanceTraveled >= gameGoalDistance) {
+                console.log('到达终点！');
+                endGame(true);
+            }
+            // 更新时间
+            elapsedTime = (Date.now() - startTimestamp) / 1000;
+            // 暂时注释掉，因为elapsedTimeDisplay元素不存在
+            // document.getElementById('elapsedTimeDisplay').textContent = `用时: ${elapsedTime.toFixed(1)} 秒`;
+        }
+
+        // 开始游戏函数
+        function startGame() {
+            console.log('开始游戏按钮被点击');
+            if (gameActive) return;
+
+            gameActive = true;
+            distanceTraveled = 0;
+            startTimestamp = Date.now();
+            startTime = performance.now();
+            elapsedTime = 0;
+            
+            // 隐藏Welcome界面
+            const welcomePanel = document.getElementById('welcomePanel');
+            if (welcomePanel) welcomePanel.style.display = 'none';
+            
+            // 显示小船
+            if (boat) {
+                boat.position.set(0, 0.25, -5);
+                boat.visible = true;
+            }
+
+            // 更新按钮状态
+            startButton.disabled = true;
+            stopButton.disabled = false;
+
+            updateProgressBar();
+
+            // 启动游戏逻辑
+            gameInterval = setInterval(updateGameLogic, 100);
+        }
+
+        // 结束游戏函数
+        function endGame(won = false) {
+            console.log('endGame被调用，won:', won);
+            clearInterval(gameInterval);
+            gameActive = false;
+            
+            // 隐藏小船
+            if (boat) {
+                boat.visible = false;
+            }
+
+            // 更新按钮状态
+            startButton.disabled = false;
+            stopButton.disabled = true;
+
+            // 隐藏welcomePanel
+            const welcomePanel = document.getElementById('welcomePanel');
+            if (welcomePanel) welcomePanel.style.display = 'none';
+            // 隐藏旧的messageBox
+            if (gameMessageBox) gameMessageBox.style.display = 'none';
+
+            // 无论胜利还是stop都弹出endPanel（不再显示welcomePanel）
+            showEndPanel(won);
+        }
+
+        // 显示结束弹窗
+        function showEndPanel(won) {
+            const endPanel = document.getElementById('endPanel');
+            const endBubble = endPanel.querySelector('.end-bubble');
+            const endTitle = endPanel.querySelector('.end-title');
+            const endDistance = document.getElementById('endDistance');
+            const endTip = endPanel.querySelector('.end-tip');
+            const endBtns = document.getElementById('endBtns');
+            const controlsPanel = document.querySelector('.controls-panel');
+            // 挪动按钮到end panel
+            endBtns.appendChild(startButton);
+            endBtns.appendChild(stopButton);
+            startButton.textContent = 'START';
+            stopButton.textContent = 'Exit';
+            startButton.disabled = false;
+            stopButton.disabled = false;
+
+            if (endPanel && endDistance && endTitle && endBubble && endTip) {
+                if (won) {
+                    endBubble.textContent = 'Congratulations!';
+                    endTitle.textContent = "You've reached the finish line!";
+                    endDistance.textContent = `You have successfully advanced ${distanceTraveled.toFixed(2)} meters!\nTime used: ${elapsedTime.toFixed(1)} seconds`;
+                    endTip.textContent = 'Focus on, Flow in';
+                } else {
+                    endBubble.textContent = 'Session Ended';
+                    endTitle.textContent = '';
+                    endDistance.textContent = `You have advanced ${distanceTraveled.toFixed(2)} meters.\nTime used: ${elapsedTime.toFixed(1)} seconds`;
+                    endTip.textContent = 'Focus on, Flow in';
+                }
+                endPanel.style.display = 'flex';
+            }
+            // 绑定按钮事件
+            startButton.onclick = function() {
+                endPanel.style.display = 'none';
+                // 恢复按钮到controls-panel
+                controlsPanel.appendChild(startButton);
+                controlsPanel.appendChild(stopButton);
+                startButton.textContent = 'START';
+                stopButton.textContent = 'STOP';
+                startGame();
+            };
+            stopButton.onclick = function() {
+                window.location.href = 'index.html';
+            };
+        }
+
+        // 恢复Welcome界面原始内容
+        function restoreWelcomePanel() {
+            const welcomePanel = document.getElementById('welcomePanel');
+            const welcomeTitle = welcomePanel.querySelector('h2');
+            const welcomeContent = welcomePanel.querySelector('p');
+            const welcomeButton = welcomePanel.querySelector('button');
+            
+            welcomeTitle.textContent = 'Welcome To EmotiBoat';
+            welcomeContent.textContent = 'Click \'START\' to start the game. In the game, the higher the concentration, the faster the ship moves forward.';
+            welcomeButton.textContent = 'OK';
+            
+            // 恢复原始的点击事件
+            welcomeButton.onclick = hideWelcomePanel;
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            currentRotationY += (targetRotationY - currentRotationY) * 0.1;
+            currentRotationX += (targetRotationX - currentRotationX) * 0.1;
+
+            if (!isDragging) {
+                targetRotationY *= dampingFactor;
+                targetRotationX *= dampingFactor;
+            }
+
+            const cameraDistance = 10;
+            camera.position.x = cameraDistance * Math.sin(currentRotationY) * Math.cos(currentRotationX);
+            camera.position.y = 5 + cameraDistance * Math.sin(currentRotationX);
+            camera.position.z = -10 + cameraDistance * Math.cos(currentRotationY) * Math.cos(currentRotationX);
+
+            camera.lookAt(0, 0, -15);
+
+            const time = Date.now() * 0.001;
+            
+             // Update starfield uniforms for blinking
+             if (starfield && starfield.material.uniforms) {
+                starfield.material.uniforms.time.value += 0.01;
+            }
+
+            const positions = plane.geometry.attributes.position.array;
+            const originalPositions = plane.geometry.attributes.position.original;
+
+            if (!originalPositions) {
+                plane.geometry.attributes.position.original = new Float32Array(positions);
+            }
+
+            const maxWaveAmplitude = 0.8;
+            const minWaveAmplitude = 0.2;
+            
+            const normalizedAttention = attentionScore / 100;
+            const normalizedExcitement = excitementScore / 100;
+            const calmnessFactor = 1 - normalizedAttention;
+            let waveIntensity = calmnessFactor * 0.7 + normalizedExcitement * 0.3;
+            waveIntensity = Math.max(0, Math.min(1, waveIntensity));
+
+            const combinedAmplitude = minWaveAmplitude + (maxWaveAmplitude - minWaveAmplitude) * waveIntensity;
+
+
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = plane.geometry.attributes.position.original[i];
+                const y = plane.geometry.attributes.position.original[i + 1];
+
+                positions[i + 2] = Math.sin(y * 0.8 + time * 2) * (combinedAmplitude * 0.5) +
+                                    Math.cos(x * 1.5 + time * 3) * (combinedAmplitude * 0.3) +
+                                    Math.sin((x + y) * 0.5 + time * 2.5) * (combinedAmplitude * 0.2);
+            }
+
+            plane.geometry.attributes.position.needsUpdate = true;
+
+            const riverLoopLength = 200;
+            plane.position.z = -(distanceTraveled % riverLoopLength);
+            if (plane.position.z < -riverLoopLength / 2) {
+                plane.position.z += riverLoopLength;
+            }
+
+            // The loaded boat model's position is fixed relative to the camera for visual effect,
+            // while the river scrolls past.
+            // No need to update boat.position.z in animate loop if it's fixed relative to camera
+
+            // excitementScore 分段渐变色
+            const t = Math.max(0, Math.min(1, excitementScore / 100));
+            const n = colorList.length - 1;
+            const seg = 1 / n;
+            let idx = Math.floor(t / seg);
+            if (idx >= n) idx = n - 1;
+            const localT = (t - idx * seg) / seg;
+            const colorA = colorList[idx];
+            const colorB = colorList[idx + 1];
+            const lerpedColor = colorA.clone().lerp(colorB, localT);
+            if (ambientLight) ambientLight.color.copy(lerpedColor);
+            if (scene.background) scene.background.copy(lerpedColor);
+
+            // 流星动画效果（新版本使用独立动画，不需要在这里处理）
+            // 每个流星都有自己的动画循环
+
+            renderer.render(scene, camera);
+        }
+
+        // Welcome确认按钮事件
+        function hideWelcomePanel() {
+            const welcomePanel = document.getElementById('welcomePanel');
+            if (welcomePanel) {
+                welcomePanel.style.display = 'none';
+            }
+        }
+
+        // 显示消息框函数
+        function showMessageBox(title, content, onClose = null) {
+            console.log('showMessageBox被调用，title:', title);
+            // 使用和Welcome一样的样式
+            const welcomePanel = document.getElementById('welcomePanel');
+            const welcomeTitle = welcomePanel.querySelector('h2');
+            const welcomeContent = welcomePanel.querySelector('p');
+            const welcomeButton = welcomePanel.querySelector('button');
+            
+            welcomeTitle.textContent = title;
+            welcomeContent.textContent = content;
+            welcomeButton.textContent = '确定';
+            welcomePanel.style.display = 'block';
+            
+            // 移除之前的点击事件，添加新的
+            welcomeButton.onclick = () => {
+                welcomePanel.style.display = 'none';
+                if (onClose) onClose();
+            };
+        }
+
+        // Start the application
+        window.onload = function () {
+            initThreeJS();
+            animate();
+            setupSocketIO(); // Connect to backend for real-time data
+            
+            // 初始化自定义目标距离显示
+            targetDistanceDisplay.textContent = `${gameGoalDistance.toFixed(2)} m`;
+            
+            // 初始化水声音效
+            waterSound = new Howl({
+                src: ['water.mp3'], // 请确保 water.mp3 在 frontend 目录下
+                loop: true,
+                volume: 0.3
+            });
+            waterSound.play();
+
+            startButton.onclick = startGame;
+            stopButton.onclick = function() {
+                // 隐藏所有弹窗
+                document.getElementById('endPanel').style.display = 'none';
+                if (typeof gameMessageBox !== 'undefined' && gameMessageBox) gameMessageBox.style.display = 'none';
+                // 回到欢迎页
+                const welcomePanel = document.getElementById('welcomePanel');
+                if (welcomePanel) welcomePanel.style.display = 'block';
+                // 停止游戏
+                clearInterval(gameInterval);
+                gameActive = false;
+                if (boat) boat.visible = false;
+                startButton.disabled = false;
+                stopButton.disabled = true;
+            };
+            // Welcome确认按钮事件
+            const welcomeConfirmBtn = document.getElementById('welcomeConfirmBtn');
+            if (welcomeConfirmBtn) {
+                welcomeConfirmBtn.addEventListener('click', hideWelcomePanel);
+            }
+            // 确保Welcome界面初始状态正确
+            restoreWelcomePanel();
+        };
+    </script>
+</body>
+</html>

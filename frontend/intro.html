@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mental Detection</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent scrolling */
+        }
+        /* Custom styles for the abstract 3D graphic placeholder if needed */
+        .abstract-graphic-placeholder {
+            width: 300px;
+            height: 300px;
+        }
+
+        /* Adjust model-viewer to fit the placeholder's styles */
+        model-viewer {
+            width: 100%; /* Take full width of its parent */
+            height: 100%; /* Take full height of its parent */
+            --poster-color: transparent; /* Makes the loading poster transparent if you want */
+        }
+
+        /* Progress bar styling to match the image */
+        .custom-progress-bar {
+            height: 5px; /* Even thinner progress bar */
+            background-color: #d1d5db; /* Light grey background */
+            border-radius: 2.5px; /* Adjust border-radius for new height */
+            overflow: hidden;
+        }
+
+        .custom-progress-bar-fill {
+            height: 100%;
+            background-color: #3b82f6; /* Blue fill */
+            border-radius: 2.5px; /* Adjust border-radius for new height */
+            /* width will be set by JS */
+        }
+        .hidden-audio {
+            display: none; /* Hides the element completely */
+        }
+    </style>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body class="bg-gray-100 flex flex-col justify-center items-center h-screen relative">
+    <audio id="background-audio" autoplay controls loop preload=auto class="hidden-audio">
+        <source src="/audio/testmusic.mp3" type="audio/mpeg">
+    </audio>
+    <div class="flex flex-col items-center justify-center p-8 w-full max-w-lg">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">Mental Detection</h1>
+        <p class="text-gray-600 mb-12">Detect your attention and excitement levels</p>
+
+        <div id="abstractGraphicContainer" class="w-72 h-72 mb-16 flex items-center justify-center">
+            <model-viewer
+                src="/models/boat2.glb"  alt="A 3D model"
+                shadow-intensity="1"
+                disable-zoom
+                camera-controls
+                auto-rotate
+                id="abstractModelViewer"
+                style="--poster-color: transparent;"
+                unstable-webxr> <template data-mv-template="custom-scene">
+                    <model-viewer-light id="spotlight"
+                        type="spot"
+                        intensity="3"
+                        color="#FFFFFF"
+                        position="0 1.5 0.5"
+                        target="0 0 0"
+                        cone-inner="45"
+                        cone-outer="60"
+                        cast-shadow>
+                    </model-viewer-light>
+                </template>
+            </model-viewer>
+        </div>
+       
+
+        <div class="w-full mb-4 hidden">
+            <label for="attentionScoreSlider" class="block text-lg font-medium text-gray-700 mb-2">Attention Score: <span id="attentionScoreValue" class="text-blue-600 font-bold">50</span></label>
+            <input type="range" id="attentionScoreSlider" min="0" max="100" value="50" class="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-500">
+        </div>
+
+        <div class="w-full mb-4 hidden">
+            <label for="excitementScoreSlider" class="block text-lg font-medium text-gray-700 mb-2">Excitement Score: <span id="excitementScoreValue" class="text-blue-600 font-bold">50</span></label>
+            <input type="range" id="excitementScoreSlider" min="0" max="100" value="50" class="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-500">
+        </div>
+        
+        <div class="w-full mb-4">
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-lg font-medium text-gray-700">Attention</span>
+                <span id="attentionStatus" class="text-sm font-semibold text-gray-600">0%</span>
+            </div>
+            <div class="custom-progress-bar">
+                <div id="attentionProgressBarFill" class="custom-progress-bar-fill" style="width: 0%;"></div>
+            </div>
+        </div>
+
+        <div class="w-full mb-8">
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-lg font-medium text-gray-700">Excitement</span>
+                <span id="excitementStatus" class="text-sm font-semibold text-gray-600">0%</span>
+            </div>
+            <div class="custom-progress-bar">
+                <div id="excitementProgressBarFill" class="custom-progress-bar-fill" style="width: 0%;"></div>
+            </div>
+        </div>
+
+        <div class="flex space-x-4 mb-4">
+            <button id="restartDetectionButton" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-6 rounded-lg shadow-md transition-all duration-300">
+                Restart Detection
+            </button>
+            <button id="completeButton" class="hidden bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition-all duration-300">
+                Complete
+            </button>
+        </div>
+
+        <p id="statusMessage" class="text-gray-500 text-sm hidden"></p>
+    </div>
+
+    <script>
+        const restartDetectionButton = document.getElementById('restartDetectionButton');
+        const completeButton = document.getElementById('completeButton');
+        const attentionProgressBarFill = document.getElementById('attentionProgressBarFill');
+        const excitementProgressBarFill = document.getElementById('excitementProgressBarFill');
+        const attentionStatus = document.getElementById('attentionStatus');
+        const excitementStatus = document.getElementById('excitementStatus');
+        const statusMessage = document.getElementById('statusMessage');
+
+        // 隐藏/禁用 slider
+        document.querySelectorAll('input[type=range]').forEach(slider => slider.style.display = 'none');
+        document.querySelectorAll('label[for=attentionScoreSlider], label[for=excitementScoreSlider]').forEach(lab => lab.style.display = 'none');
+        document.querySelectorAll('.text-sm.text-gray-500').forEach(el => el.style.display = 'none');
+        const attVal = document.getElementById('attentionScoreValue');
+        if (attVal) attVal.style.display = 'none';
+        const excVal = document.getElementById('excitementScoreValue');
+        if (excVal) excVal.style.display = 'none';
+
+        // 进度条逻辑
+        let attentionProgress = 0;
+        let excitementProgress = 0;
+        let attentionCompleted = false;
+        let excitementCompleted = false;
+        const requiredAttention = 0.5; // 50%
+        const requiredExcitement = 0.1; // 10%
+
+        // Socket.IO 连接
+        const socket = io('http://localhost:5000');
+        socket.on('connect', () => {
+            console.log('Connected to backend');
+            statusMessage.textContent = 'Detecting...';
+            statusMessage.classList.remove('hidden');
+        });
+        socket.on('brain_data', (payload) => {
+            if (payload.type === 'met' && payload.data) {
+                let att = payload.data.attention;
+                let exc = payload.data.excitement;
+                if (typeof att === 'number') {
+                    attentionProgress = Math.max(0, Math.min(1, att));
+                    attentionStatus.textContent = `${Math.round(attentionProgress * 100)}%`;
+                    attentionProgressBarFill.style.width = `${attentionProgress * 100}%`;
+                    if (attentionProgress >= requiredAttention) {
+                        attentionCompleted = true;
+                        attentionStatus.textContent = 'Completed';
+                    }
+                }
+                if (typeof exc === 'number') {
+                    excitementProgress = Math.max(0, Math.min(1, exc));
+                    excitementStatus.textContent = `${Math.round(excitementProgress * 100)}%`;
+                    excitementProgressBarFill.style.width = `${excitementProgress * 100}%`;
+                    if (excitementProgress >= requiredExcitement) {
+                        excitementCompleted = true;
+                        excitementStatus.textContent = 'Completed';
+                    }
+                }
+                // 检测完成自动跳转
+                if (attentionCompleted && excitementCompleted) {
+                    statusMessage.textContent = 'Detection completed!';
+                    statusMessage.classList.remove('hidden');
+                    completeButton.classList.remove('hidden');
+                    setTimeout(() => {
+                        window.location.href = 'game.html';
+                    }, 1200);
+                }
+            }
+        });
+        socket.on('disconnect', () => {
+            statusMessage.textContent = 'Disconnected from backend';
+            statusMessage.classList.remove('hidden');
+        });
+
+        // Complete 按钮跳转
+        completeButton.addEventListener('click', () => {
+            window.location.href = 'game.html';
+        });
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            statusMessage.textContent = 'Waiting for backend data...';
+            statusMessage.classList.remove('hidden');
+            completeButton.classList.add('hidden');
+        });
+    </script>
+</body>
+</html>

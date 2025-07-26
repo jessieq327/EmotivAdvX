@@ -1,6 +1,5 @@
 flask
 websocket-client
-
 flask-socketio
 flask-cors
 

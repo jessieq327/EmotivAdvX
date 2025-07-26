@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Meteor Test</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r79/three.min.js"></script>
+  <script>
+    let scene, camera, renderer;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+      camera.position.z = 50;
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const light = new THREE.AmbientLight(0xffffff, 1);
+      scene.add(light);
+
+      setInterval(spawnMeteor, 2000);
+      document.addEventListener('click', spawnMeteor);
+
+      animate();
+    });
+
+    function spawnMeteor() {
+      // 主球（头部）
+      const mainSphereGeometry = new THREE.SphereGeometry(2, 16, 16);
+      const mainSphereMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x00ffff, 
+        transparent: true, 
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending
+      });
+      const mainSphere = new THREE.Mesh(mainSphereGeometry, mainSphereMaterial);
+      
+      // 设置初始位置
+      mainSphere.position.set(
+        (Math.random() - 0.5) * 100,
+        Math.random() * 50 + 30,
+        Math.random() * 200 - 300
+      );
+      
+      scene.add(mainSphere);
+      
+      // 轨迹球数组
+      const trailBalls = [];
+      const trailPositions = []; // 记录轨迹位置
+      const trailCount = 20; // 增加轨迹球的数量：从12增加到20
+      
+      // 计算运动方向
+      const direction = new THREE.Vector3(
+        -1 - Math.random() * 0.5,
+        -1 - Math.random() * 0.5,
+        -0.5 - Math.random() * 0.5
+      ).normalize();
+
+      let age = 0;
+      const maxAge = 180; // 增加持续时间：从120增加到180
+
+      function updateMeteor() {
+        if (age++ > maxAge) {
+          scene.remove(mainSphere);
+          trailBalls.forEach(ball => scene.remove(ball));
+          return;
+        }
+        
+        // 移动主球
+        mainSphere.position.add(direction.clone().multiplyScalar(1.5));
+        
+        // 记录轨迹位置
+        trailPositions.push(mainSphere.position.clone());
+        if (trailPositions.length > trailCount) {
+          trailPositions.shift(); // 移除最老的位置
+        }
+        
+        // 更新轨迹球
+        trailBalls.forEach((ball, index) => {
+          scene.remove(ball);
+        });
+        trailBalls.length = 0; // 清空数组
+        
+        // 重新创建轨迹球 - 修复：从大到小排列
+        for (let i = 0; i < trailPositions.length; i++) {
+          const size = 2 * (1 - i / trailCount); // 逐渐变小
+          const trailGeometry = new THREE.SphereGeometry(size, 12, 12);
+          const trailMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x00ffff, 
+            transparent: true, 
+            opacity: 0.8 * (1 - i / trailCount), // 逐渐变透明
+            blending: THREE.AdditiveBlending
+          });
+          const trailBall = new THREE.Mesh(trailGeometry, trailMaterial);
+          
+          // 修复：使用最新的位置给最大的球，最老的位置给最小的球
+          const positionIndex = trailPositions.length - 1 - i;
+          trailBall.position.copy(trailPositions[positionIndex]);
+          scene.add(trailBall);
+          trailBalls.push(trailBall);
+        }
+        
+        // 更新透明度
+        mainSphere.material.opacity *= 0.995; // 更慢的渐隐：从0.99改为0.995
+        trailBalls.forEach(ball => {
+          ball.material.opacity *= 0.995; // 更慢的渐隐
+        });
+        
+        requestAnimationFrame(updateMeteor);
+      }
+
+      updateMeteor();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
